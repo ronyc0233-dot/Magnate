@@ -5,14 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>Magnate</title>
   <meta name="theme-color" content="#0f2a1d">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Lilita+One&family=Nunito:wght@500;700;800;900&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- LOBBY -->
+  <!-- INICIO -->
   <section id="screen-home" class="screen">
     <div class="home-card">
       <h1 class="logo">MAGNATE</h1>
-      <p class="tag">Compra ciudades, construye y lleva a la quiebra a tus amigos. 2 a 4 jugadores en línea.</p>
+      <p class="tag">Compra ciudades, construye y lleva a la quiebra a tus amigos. De 2 a 8 jugadores en línea.</p>
       <label>Tu nombre<input id="in-name" maxlength="16" placeholder="Ej. Carlos"></label>
       <button id="btn-create" class="primary">Crear sala</button>
       <div class="or">o únete con un código</div>
@@ -23,7 +25,7 @@
       <details class="rules">
         <summary>Reglas</summary>
         <ul>
-          <li>Cada jugador empieza con $1500 y cobra $200 al pasar por la Salida.</li>
+          <li>Cada jugador empieza con $1500, o con lo que elija el anfitrión (hasta $5000). Al pasar por la Salida cobra $200.</li>
           <li>Si caes en una propiedad libre la puedes comprar; si no, se subasta entre todos.</li>
           <li>Si tiene dueño, pagas alquiler. Con el grupo de color completo, el alquiler sin casas se duplica.</li>
           <li><b>Construcción libre:</b> puedes construir en cualquier calle tuya, aunque no tengas el grupo completo y sin construir parejo. Hacen falta 4 casas antes del hotel.</li>
@@ -41,6 +43,11 @@
       <h2>Sala</h2>
       <div class="code-big" id="lobby-code">-----</div>
       <button id="btn-copy" class="small">Copiar enlace de invitación</button>
+      <div class="money-setting">
+        <span>Dinero inicial</span>
+        <select id="sel-money"></select>
+        <b id="lbl-money" class="hidden"></b>
+      </div>
       <ul id="lobby-players" class="lobby-players"></ul>
       <p id="lobby-hint" class="muted"></p>
       <button id="btn-start" class="primary">Iniciar partida</button>
@@ -51,21 +58,36 @@
   <!-- JUEGO -->
   <section id="screen-game" class="screen hidden">
     <div class="game">
-      <div class="board-wrap">
-        <div id="board" class="board">
-          <div class="center">
-            <div class="center-logo">MAGNATE</div>
-            <div id="dice" class="dice"></div>
-            <div id="turn-info" class="turn-info"></div>
-            <div id="actions" class="actions"></div>
+      <div class="board-col">
+      <div class="board-wrap" id="board-wrap">
+        <button id="btn-zoom" class="zoom-btn" title="Acercar tablero">🔍 Acercar</button>
+        <div class="board-frame">
+          <div id="board" class="board">
+            <div class="center">
+              <div id="skyline" class="skyline"></div>
+              <div class="deck deck-chance"><span class="deck-art" id="art-chance"></span>SORPRESA</div>
+              <div class="deck deck-chest"><span class="deck-art" id="art-chest"></span>FONDO COMÚN</div>
+              <div class="center-ui">
+                <div class="banner">MAGNATE</div>
+                <div id="dice" class="dice">
+                  <div class="die-wrap"><div class="die" id="die0"></div></div>
+                  <div class="die-wrap"><div class="die" id="die1"></div></div>
+                </div>
+                <div id="turn-info" class="turn-info"></div>
+                <div id="actions" class="actions"></div>
+              </div>
+            </div>
+            <div id="tokens" class="tokens-layer"></div>
           </div>
         </div>
+      </div>
+      <div id="dock" class="dock"></div>
       </div>
       <aside class="side">
         <div id="players" class="players"></div>
         <div class="side-buttons">
-          <button id="btn-myprops">Mis propiedades</button>
-          <button id="btn-trade">Intercambiar</button>
+          <button id="btn-myprops">🏠 Mis propiedades</button>
+          <button id="btn-trade">🤝 Intercambiar</button>
         </div>
         <div id="trades"></div>
         <div class="tabs">

@@ -54,7 +54,7 @@ io.on('connection', (socket) => {
     const r = getRoom(code);
     if (!r) return cb({ error: 'No existe una sala con ese código.' });
     if (r.started) return cb({ error: 'La partida ya comenzó.' });
-    if (r.players.length >= 4) return cb({ error: 'La sala está llena (máximo 4).' });
+    if (r.players.length >= game.MAX_PLAYERS) return cb({ error: `La sala está llena (máximo ${game.MAX_PLAYERS}).` });
     attach(r, game.addPlayer(r, name));
     cb({ ok: true });
   });
@@ -64,13 +64,19 @@ io.on('connection', (socket) => {
     const p = r && r.players.find((x) => x.token === token);
     if (!p) return cb({ error: 'La sesión anterior ya no existe.' });
     attach(r, p);
-    if (r.started) { r.log.push(`🔌 ${p.name} se reconectó.`); broadcast(r); }
     cb({ ok: true });
   });
 
   socket.on('start', (_d, cb = () => {}) => {
     if (!room) return cb({ error: 'Sin sala.' });
     const err = game.startGame(room, player.id);
+    if (err) return cb({ error: err });
+    broadcast(room); cb({ ok: true });
+  });
+
+  socket.on('setMoney', (amount, cb = () => {}) => {
+    if (!room || !player) return cb({ error: 'Sin sala.' });
+    const err = game.setStartMoney(room, player.id, amount);
     if (err) return cb({ error: err });
     broadcast(room); cb({ ok: true });
   });
@@ -104,7 +110,6 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     if (!room || !player || player.socketId !== socket.id) return;
     player.connected = false;
-    if (room.started) room.log.push(`🔌 ${player.name} se desconectó.`);
     broadcast(room);
   });
 });

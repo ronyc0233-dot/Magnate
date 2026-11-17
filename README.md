@@ -1,6 +1,7 @@
 # Magnate
 
-Juego de mesa de propiedades en línea para 2 a 4 jugadores (Node.js + Socket.io).
+Juego de mesa de propiedades en línea para 2 a 8 jugadores (Node.js + Socket.io).
+El anfitrión elige el dinero inicial ($1500 a $5000).
 
 **Regla especial:** se puede construir en cualquier calle propia sin tener el grupo de color completo
 y sin construir parejo. Siempre hacen falta 4 casas antes de poner un hotel.

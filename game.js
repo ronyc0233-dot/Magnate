@@ -3,11 +3,13 @@ const crypto = require('crypto');
 const { BOARD, CHANCE, CHEST } = require('./board');
 
 const START_MONEY = 1500;
+const MAX_START_MONEY = 5000;
+const MAX_PLAYERS = 8;
 const GO_SALARY = 200;
 const JAIL_POS = 10;
 const JAIL_FINE = 50;
-const COLORS = ['#e8590c', '#1971c2', '#2f9e44', '#ae3ec9'];
-const TOKENS = ['🚗', '🎩', '🐕', '🚢'];
+const COLORS = ['#f76707', '#1c7ed6', '#37b24d', '#ae3ec9', '#e03131', '#0ca678', '#f59f00', '#e64980'];
+const TOKENS = ['🚗', '🎩', '🐕', '🚢', '🚀', '🐱', '⚽', '👑'];
 
 const rid = (n = 8) => crypto.randomBytes(n).toString('hex');
 const die = () => 1 + crypto.randomInt(6);
@@ -26,17 +28,20 @@ function createRoom(code) {
     debts: [], auction: null, trades: [],
     chanceDeck: shuffle(CHANCE.map((_, i) => i)), chestDeck: shuffle(CHEST.map((_, i) => i)),
     housesLeft: 32, hotelsLeft: 12,
-    log: [], chat: [], lastCard: null, seq: 0,
+    log: [], chat: [], lastCard: null, seq: 0, rollSeq: 0,
+    startMoney: START_MONEY,
     onChange: () => {},
   };
 }
 
 function addPlayer(room, name) {
-  const n = room.players.length;
+  // Primer color libre (por si alguien salió de la sala de espera).
+  const n = COLORS.findIndex((c) => !room.players.some((p) => p.color === c));
   const p = {
     id: rid(4), token: rid(16), name: String(name || 'Jugador').trim().slice(0, 16) || 'Jugador',
-    color: COLORS[n], icon: TOKENS[n], money: START_MONEY, pos: 0,
+    color: COLORS[n], icon: TOKENS[n], money: room.startMoney, pos: 0,
     inJail: false, jailTurns: 0, jailCards: [], bankrupt: false, connected: true,
+    move: null,
   };
   room.players.push(p);
   if (!room.hostId) room.hostId = p.id;
@@ -148,11 +153,23 @@ function declareBankrupt(room, p, creditorId) {
 }
 
 // ---------- movimiento ----------
+// Cada movimiento queda registrado para que los clientes lo animen paso a paso.
+function addSeg(room, p, to, mode) {
+  if (!p.move || p.move.done) p.move = { seq: ++room.seq, segs: [] };
+  p.move.segs.push({ from: p.pos, to, mode });
+}
 function moveTo(room, p, to, collectGo = true) {
+  addSeg(room, p, to, 'walk');
   if (collectGo && to < p.pos) { p.money += GO_SALARY; log(room, `${p.name} pasa por la Salida y cobra $${GO_SALARY}.`); }
   p.pos = to;
 }
+function moveBack(room, p, n) {
+  const to = (p.pos + 40 - n) % 40;
+  addSeg(room, p, to, 'back');
+  p.pos = to;
+}
 function goToJail(room, p) {
+  addSeg(room, p, JAIL_POS, 'jump');
   p.pos = JAIL_POS; p.inJail = true; p.jailTurns = 0; room.extraRoll = false;
   log(room, `🚔 ${p.name} va a la cárcel.`);
 }
@@ -189,14 +206,27 @@ function landOn(room, p, opts = {}) {
   }
 }
 
+// Saca una tarjeta y guarda su efecto real en el dinero de cada jugador,
+// para mostrar en pantalla a quién le sumó o le restó.
 function drawCard(room, p, deckName) {
+  const before = new Map(room.players.map((x) => [x.id, x.money]));
+  const debtsBefore = room.debts.length;
+  const card = applyCard(room, p, deckName);
+  card.effects = room.players
+    .map((x) => ({ id: x.id, delta: x.money - before.get(x.id) }))
+    .filter((e) => e.delta !== 0);
+  card.debts = room.debts.slice(debtsBefore).map((d) => ({ id: d.debtor, amount: d.amount }));
+  card.balance = p.money;
+}
+
+function applyCard(room, p, deckName) {
   const deck = deckName === 'chance' ? room.chanceDeck : room.chestDeck;
   const cards = deckName === 'chance' ? CHANCE : CHEST;
   const idx = deck.shift();
   const c = cards[idx];
-  room.lastCard = { deck: deckName, text: c.text, player: p.id, seq: ++room.seq };
+  const card = room.lastCard = { deck: deckName, text: c.text, player: p.id, seq: ++room.seq, note: null };
   log(room, `🃏 ${p.name} (${deckName === 'chance' ? 'Sorpresa' : 'Fondo Común'}): ${c.text}`);
-  if (c.kind === 'jailFree') { p.jailCards.push({ deck: deckName, idx }); return; }
+  if (c.kind === 'jailFree') { p.jailCards.push({ deck: deckName, idx }); return card; }
   deck.push(idx);
   const others = active(room).filter((o) => o.id !== p.id);
   switch (c.kind) {
@@ -204,7 +234,7 @@ function drawCard(room, p, deckName) {
       if (c.amount > 0) p.money += c.amount; else charge(room, p, -c.amount, null, 'tarjeta');
       break;
     case 'moveTo': moveTo(room, p, c.to); landOn(room, p); break;
-    case 'moveBack': p.pos = (p.pos + 40 - c.n) % 40; landOn(room, p); break;
+    case 'moveBack': moveBack(room, p, c.n); landOn(room, p); break;
     case 'jail': goToJail(room, p); break;
     case 'payEach': others.forEach((o) => charge(room, p, c.amount, o, 'tarjeta')); break;
     case 'collectEach': others.forEach((o) => charge(room, o, c.amount, p, 'cumpleaños')); break;
@@ -215,6 +245,7 @@ function drawCard(room, p, deckName) {
         cost += st.houses === 5 ? c.hotel : st.houses * c.house;
       }
       if (cost) { log(room, `${p.name} paga $${cost} en reparaciones.`); charge(room, p, cost, null, 'reparaciones'); }
+      else { card.note = 'No tiene construcciones: paga $0.'; log(room, `${p.name} no tiene construcciones: paga $0.`); }
       break;
     }
     case 'nearestRail': {
@@ -226,6 +257,7 @@ function drawCard(room, p, deckName) {
       moveTo(room, p, to); landOn(room, p, { utilTen: true }); break;
     }
   }
+  return card;
 }
 
 // ---------- subastas ----------
@@ -262,10 +294,21 @@ function auctionCheckEnd(room) {
 function startGame(room, byId) {
   if (room.hostId !== byId) return 'Solo el anfitrión puede iniciar.';
   if (room.players.length < 2) return 'Se necesitan al menos 2 jugadores.';
+  room.players.forEach((p) => (p.money = room.startMoney));
   room.started = true;
   room.turn = crypto.randomInt(room.players.length);
   room.phase = 'roll';
   log(room, `🎲 Comienza la partida. Empieza ${cur(room).name}.`);
+  return null;
+}
+
+function setStartMoney(room, byId, amount) {
+  if (room.hostId !== byId) return 'Solo el anfitrión puede cambiarlo.';
+  if (room.started) return 'La partida ya comenzó.';
+  const v = Math.round(Number(amount) / 500) * 500;
+  if (!(v >= START_MONEY && v <= MAX_START_MONEY)) return `Elige entre $${START_MONEY} y $${MAX_START_MONEY}.`;
+  room.startMoney = v;
+  room.players.forEach((p) => (p.money = v));
   return null;
 }
 
@@ -282,6 +325,8 @@ function handle(room, pid, a) {
     case 'roll': {
       if (!myTurn || room.phase !== 'roll') return 'No puedes tirar ahora.';
       const d1 = die(), d2 = die(); room.dice = [d1, d2];
+      room.rollSeq++; room.rollBy = pid;
+      p.move = { seq: ++room.seq, segs: [] };
       const dbl = d1 === d2; const total = d1 + d2;
       log(room, `🎲 ${p.name} tira ${d1} + ${d2} = ${total}${dbl ? ' (¡dobles!)' : ''}`);
       room.phase = 'resolving'; room.extraRoll = false;
@@ -477,10 +522,11 @@ function publicState(room) {
     code: room.code, hostId: room.hostId, started: room.started, over: room.over, winner: room.winner,
     players: room.players.map(({ token, socketId, ...rest }) => rest),
     props: room.props, turn: room.turn, phase: room.phase, dice: room.dice,
+    rollSeq: room.rollSeq, rollBy: room.rollBy || null, startMoney: room.startMoney, maxPlayers: MAX_PLAYERS,
     debts: room.debts, auction: room.auction, trades: room.trades,
     housesLeft: room.housesLeft, hotelsLeft: room.hotelsLeft,
     log: room.log.slice(-60), chat: room.chat.slice(-60), lastCard: room.lastCard, now: Date.now(),
   };
 }
 
-module.exports = { createRoom, addPlayer, startGame, handle, publicState, rentFor, BOARD };
+module.exports = { createRoom, addPlayer, startGame, setStartMoney, handle, publicState, rentFor, BOARD, MAX_PLAYERS };
